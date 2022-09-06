@@ -1,12 +1,17 @@
 use actix_web::Error as ActError;
 use actix_web::{
     error::ErrorBadRequest,
+    middleware::Logger,
     web::{post, BytesMut, Payload},
     App, HttpResponse, HttpServer,
 };
 use anyhow::{Error as AnyError, Result};
 use async_fs::File;
+use dotenv::dotenv;
 use futures::{AsyncWriteExt, StreamExt};
+use std::env;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 const MAX_SIZE: usize = 262_144; // 256k
 
@@ -18,7 +23,9 @@ async fn merge_request(payload: Payload) -> Result<HttpResponse, ActError> {
     merge().await?;
 
     // send the merged db back
-    Ok(HttpResponse::Ok().finish())
+    let body = async_fs::read("./password.kdbx").await.unwrap();
+
+    Ok(HttpResponse::Ok().body(body))
 }
 
 async fn write_db(mut payload: Payload) -> Result<(), ActError> {
@@ -43,15 +50,49 @@ async fn write_db(mut payload: Payload) -> Result<(), ActError> {
 }
 
 async fn merge() -> Result<(), ActError> {
+    let password = rpassword::prompt_password("Enter Password: ").unwrap();
+
+    let password_db = env::var("DB_NAME").unwrap();
+    let password_db = format!("{}.kdbx", password_db);
+
+    let mut cmd = Command::new("keepassxc-cli")
+        .args(["merge", "-s", &password_db, "new_db.kdbx"])
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stdin = cmd.stdin.take().expect("failed to take stdin");
+    std::thread::spawn(move || {
+        stdin.write_all(password.as_bytes()).unwrap();
+    });
+
+    let out = cmd.wait_with_output().unwrap();
+    let out = std::str::from_utf8(&out.stdout).unwrap();
+    println!("input: {}", out);
     Ok(())
 }
 
 #[actix_web::main]
 async fn main() -> Result<(), AnyError> {
-    HttpServer::new(|| App::new().route("/", post().to(merge_request)))
-        .bind(("127.0.0.1", 8080))?
-        .run()
-        .await?;
+    dotenv().ok();
+    let address = env::var("ADDRESS").unwrap();
+    let port = env::var("PORT").unwrap();
+    let url = format!("{}:{}", address, port);
+
+    env::set_var("RUST_LOG", "actix_web=info");
+    env_logger::init();
+    HttpServer::new(move || {
+        App::new()
+            .wrap(Logger::default())
+            //.app_data(password.clone())
+            .route("/", post().to(merge_request))
+    })
+    .workers(1)
+    .bind(url)?
+    .run()
+    .await?;
 
     Ok(())
 }

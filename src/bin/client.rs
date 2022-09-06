@@ -1,6 +1,9 @@
 use anyhow::{Result, Error};
-use async_fs::read;
+use async_fs::{read, File};
 use reqwest::Client;
+use futures::AsyncWriteExt;
+use std::env;
+use dotenv::dotenv;
 
 async fn send_db(url: &str, filename: &str) -> Result<(), Error> {
     let filepath = format!("./{}.kdbx", filename);
@@ -15,14 +18,23 @@ async fn send_db(url: &str, filename: &str) -> Result<(), Error> {
     // wait for response from server
     println!("{:?}", res);
 
+    let bytes = res.bytes().await.unwrap();
+    let filename = "new_db";
+    let path = format!("./{}.kdbx", filename);
+    let mut file = File::create(&path).await?;
+    file.write_all(&bytes).await?;
+
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let url = "http://127.0.0.1:8080";
-    let filename = "password";
+    dotenv().ok();
+    let address = env::var("ADDRESS").unwrap();
+    let port = env::var("PORT").unwrap();
+    let url = format!("http://{}:{}", address, port);
+    let filename = env::var("DB_NAME").unwrap();
 
-    send_db(url, filename).await?;
+    send_db(&url, &filename).await?;
     Ok(())
 }
