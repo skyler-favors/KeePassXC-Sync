@@ -5,11 +5,11 @@
 > This tool aims to solve that problem!
 
 ## Getting Started
-- run the server binary on one machine
-- run the client binary on another
-- Congratulations, you have merged your password databases
+1. run `cargo run --bin server -- -f <path-to-db>` on one machine
+2. run `cargo run --bin client -- -f <path-to-db> -u <http://*server IP address*>` on other
+3. enter password on server
+4. enjoy merged databases
 
 ## TODO
-- Add cli with clap
 - Polish
 

@@ -10,10 +10,10 @@ async fn send_db(url: &str, file_path: &str) -> Result<(), Error> {
     let client = Client::new();
     let res = client.post(url).body(bytes).send().await?;
 
-    let bytes = res.bytes().await.unwrap();
-    let filename = "Passwords.kdbx";
-    let path = format!("./{}.kdbx", filename);
-    let mut file = File::create(&path).await?;
+    let bytes = res.bytes().await?;
+    //let filename = "Passwords";
+    //let path = format!("./{}.kdbx", filename);
+    let mut file = File::create(&file_path).await?;
     file.write_all(&bytes).await?;
 
     Ok(())

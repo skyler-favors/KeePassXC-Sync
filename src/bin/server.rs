@@ -12,7 +12,7 @@ use dotenv::dotenv;
 use futures::{AsyncWriteExt, StreamExt};
 use std::{env, fs};
 use std::io::Write;
-use std::process::{Command, Stdio, exit};
+use std::process::{Command, Stdio};
 use local_ip_address::local_ip;
 
 const MAX_SIZE: usize = 262_144; // 256k
