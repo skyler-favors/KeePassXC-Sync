@@ -7,23 +7,35 @@ use actix_web::{
 };
 use anyhow::{Error as AnyError, Result};
 use async_fs::File;
+use clap::Parser;
 use dotenv::dotenv;
 use futures::{AsyncWriteExt, StreamExt};
-use std::env;
+use std::{env, fs};
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::{Command, Stdio, exit};
+use local_ip_address::local_ip;
 
 const MAX_SIZE: usize = 262_144; // 256k
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    // filename of pass_db
+    #[clap(short, long, value_parser)]
+    file_path: String,
+}
+
 async fn merge_request(payload: Payload) -> Result<HttpResponse, ActError> {
+    let cli = Args::parse();
+
     // save the recieved db
     write_db(payload).await?;
 
     // merge the two db's
-    merge().await?;
+    merge(&cli.file_path).await?;
 
     // send the merged db back
-    let body = async_fs::read("./password.kdbx").await.unwrap();
+    let body = async_fs::read(cli.file_path).await.unwrap();
 
     Ok(HttpResponse::Ok().body(body))
 }
@@ -49,14 +61,11 @@ async fn write_db(mut payload: Payload) -> Result<(), ActError> {
     Ok(())
 }
 
-async fn merge() -> Result<(), ActError> {
+async fn merge(file_path: &str) -> Result<(), ActError> {
     let password = rpassword::prompt_password("Enter Password: ").unwrap();
 
-    let password_db = env::var("DB_NAME").unwrap();
-    let password_db = format!("{}.kdbx", password_db);
-
     let mut cmd = Command::new("keepassxc-cli")
-        .args(["merge", "-s", &password_db, "new_db.kdbx"])
+        .args(["merge", "-s", file_path, "new_db.kdbx"])
         .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .stdout(Stdio::piped())
@@ -71,12 +80,18 @@ async fn merge() -> Result<(), ActError> {
     let out = cmd.wait_with_output().unwrap();
     let out = std::str::from_utf8(&out.stdout).unwrap();
     println!("input: {}", out);
+
+    fs::remove_file("./new_db.kdbx")?;
+
     Ok(())
 }
 
 #[actix_web::main]
 async fn main() -> Result<(), AnyError> {
+    Args::parse();
     dotenv().ok();
+    let local_ip = local_ip().unwrap();
+    println!("ip: {}", local_ip);
     let address = env::var("ADDRESS").unwrap();
     let port = env::var("PORT").unwrap();
     let url = format!("{}:{}", address, port);
@@ -86,7 +101,6 @@ async fn main() -> Result<(), AnyError> {
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
-            //.app_data(password.clone())
             .route("/", post().to(merge_request))
     })
     .workers(1)
